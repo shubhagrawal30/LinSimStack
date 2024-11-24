@@ -11,6 +11,7 @@ from lmfit import Parameters, minimize, fit_report
 from skymaps import Skymaps
 from skycatalogs import Skycatalogs
 from simstacktoolbox import SimstackToolbox
+from scipy.optimize import lsq_linear # for linear least squares fitting
 
 class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
 
@@ -201,6 +202,7 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
             llists = np.prod(nlists)
             #pdb.set_trace()
 
+        print("Step 1: Making Layers Cube")
         # STEP 1  - Make Layers Cube
         layers = np.zeros([llists, cms[0], cms[1]])
 
@@ -489,6 +491,7 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
 
         nlayers = np.shape(layers)[0]
 
+        print("Step 2: Convolve Layers and put in pixels")
         # STEP 2  - Convolve Layers and put in pixels
         if "write_simmaps" in self.config_dict["general"]["error_estimator"]:
             if self.config_dict["general"]["error_estimator"]["write_simmaps"] == 1:
@@ -531,16 +534,27 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
 
             # write layers to fits files here
             if write_fits_layers:
-                path_layer = r'D:\maps\cutouts\layers'
+                path_layer = r'./temp/layers/'
                 name_layer = 'layer_'+str(umap)+'.fits'
                 name_layer = '{0}__fwhm_{1:0.1f}'.format(trimmed_labels[umap], fwhm).replace('.','p')+'.fits'
                 if 'foreground_layer' not in trimmed_labels[umap]:
                     hdu = fits.PrimaryHDU(tmap, header=hd)
                     hdul = fits.HDUList([hdu])
                     hdul.writeto(os.path.join(path_layer, name_layer), overwrite=True)
+                    if True:
+                        from matplotlib import pyplot as plt
+                        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 30))
+                        plt.colorbar(ax1.imshow(tmap, vmin=0.5, vmax=0.8), ax=ax1)
+                        plt.colorbar(ax2.imshow(layer), ax=ax2)
+                        mask = np.zeros(np.shape(layer))
+                        mask[ind_fit] = 1
+                        plt.colorbar(ax3.imshow(mask), ax=ax3)
+                        plt.savefig(os.path.join(path_layer, name_layer.replace('.fits', '.png')))
+                        plt.close()
+                    
 
             # Remove mean from map
-            cfits_maps[umap, :] = tmap[ind_fit] - np.mean(tmap[ind_fit])
+            cfits_maps[umap, :] = tmap[ind_fit] - np.mean(tmap[ind_fit]) # TODO(shubh): what does this mean subtraction do?
 
             # Add layer to write_simmaps cube
             if "convolved_layer_cube" in map_dict:
@@ -554,7 +568,7 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
         cfits_maps[-2, :] = cmap[ind_fit]
         cfits_maps[-1, :] = cnoise[ind_fit]
 
-        return {'cube': cfits_maps, 'labels': trimmed_labels}
+        return {'cube': cfits_maps, 'labels': trimmed_labels, 'ind_fit': ind_fit, 'cms': cms}
 
     def stack_in_wavelengths(self,
                              catalog,
@@ -585,6 +599,7 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
 
         # Loop through wavelengths
         for wv in map_keys:
+            print(wv)
 
             map_dict = self.maps_dict[wv].copy()
 
@@ -606,6 +621,39 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
 
             # Add stacked fluxes to output dict
             cov_ss_dict[wv] = cov_ss_1d
+            
+            # plot fit, map, and residuals
+            if True:
+                cms = cube_dict['cms']
+                cube = cube_dict['cube']
+                ind_fit = cube_dict['ind_fit']
+                map2d = np.zeros(cms) * np.nan
+                map2d[ind_fit] = cube_dict['cube'][-2, :]
+                fit2d = np.zeros(cms)
+                for i, iparam_label in enumerate(cube_dict['labels']):
+                    param_label = iparam_label.replace('.', 'p')
+                    if 'foreground' not in iparam_label:
+                        layer = np.zeros(cms)
+                        layer[ind_fit] = cube[i, :]
+                        fit2d += cov_ss_1d.params[param_label].value * layer
+                    else:
+                        fit2d += cov_ss_1d.params[param_label].value
+                res2d = map2d - fit2d
+                res2d_err = np.zeros(cms)
+                res2d_err[ind_fit] = cov_ss_1d.residual
+                
+                from matplotlib import pyplot as plt
+                fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(10, 10))
+                plt.colorbar(ax1.imshow(map2d), ax=ax1)
+                plt.colorbar(ax2.imshow(fit2d), ax=ax2)
+                plt.colorbar(ax3.imshow(res2d), ax=ax3)
+                plt.colorbar(ax4.imshow(res2d_err), ax=ax4)
+                ax1.set_title('map')
+                ax2.set_title('fit')
+                ax3.set_title('residual')
+                ax4.set_title('residual / error')
+                plt.savefig(os.path.join('./temp/', f'fit_map_resid_{wv}.png'))
+                plt.close()
 
             # Write simulated maps from best-fits
             if self.config_dict["general"]["error_estimator"]["write_simmaps"]:
@@ -651,11 +699,78 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
             # Add parameter
             fit_params.add(parameter_label, value=1e-3 * np.random.randn())
 
-        cov_ss_1d = minimize(self.simultaneous_stack_array_oned, fit_params,
-                             args=(np.ndarray.flatten(cube),),
-                             kws={'data1d': np.ndarray.flatten(imap), 'err1d': np.ndarray.flatten(ierr)},
-                             nan_policy='propagate')
+        print("Step 3: Minimizing to get Best Fit Parameters")
+        # cov_ss_1d = minimize(self.simultaneous_stack_array_oned, fit_params,
+        #                      args=(np.ndarray.flatten(cube),),
+        #                      kws={'data1d': np.ndarray.flatten(imap), 'err1d': np.ndarray.flatten(ierr)},
+        #                      nan_policy='propagate')
+        cov_ss_1d = self.linear_minimize(fit_params, cube, imap, ierr)
         return cov_ss_1d
+
+
+    def linear_minimize(self, p, layers, data, err=None, arg_order=None):
+        ''' 
+        Function that minimizes the difference between the data and the model, 
+        using analytical marginalization of the linear model parameters.
+        
+        :param p: Parameters dictionary
+        :param layers: Cube layers not flattened to 1d
+        :param data: Map not flattened to 1d
+        :param err: Noise not lattened to 1d
+        :param arg_order: If forcing layers to correspond to labels
+        :return: data-model/error, or data-model if err1d is None.
+        '''
+        
+        layers = np.array(layers).T
+        data = np.array(data)
+        err = np.array(err)
+        
+        assert(layers.shape[0] == data.shape[0])
+        assert(layers.shape[0] == err.shape[0])
+        
+        # remove mean from model layers: in normal simstack this is done *after*
+        # the model has been computed, but here we do it for each component 
+        # before to make the model linear in the parameters
+        layers -= np.mean(layers, axis=0)
+        data -= np.mean(data) 
+        # TODO: what about the last "foreground" layer?
+        
+        # scale the data and model by the noise to get the correct relative weighting
+        layers /= err[:, np.newaxis]
+        data /= err
+        
+        result = lsq_linear(layers, data, bounds=(0, 1))
+        
+        if False:
+            from matplotlib import pyplot as plt
+            plt.figure()
+            plt.plot(data, label='data')
+            plt.plot(np.dot(layers, result.x), label='model')
+            plt.legend()
+            plt.show()
+            plt.close()
+        
+        # now, in order to make life easier, we want to make the structure of
+        # this object similar to the lmfit result object
+                
+        result_params = Parameters()
+        if arg_order is not None:
+            for i, key in enumerate(arg_order): # TODO: check this, not needed for now
+                result_params.add(key, value=result.x[i])
+        else:
+            for i, key in enumerate(p.keys()):
+                result_params.add(key, value=result.x[i])
+        
+        # "copying" a OptimizeResult from scipy.optimize to a lmfit MinimizerResult
+        return_obj = type('linear_min_result', (object,), 
+                        {"params": result_params,
+                        "residual": result.fun,
+                        "var_names": result_params.keys(),
+                        "message": result.message,
+                        "success": result.success,
+                        "status": result.status,
+                        })
+        return return_obj
 
     def simultaneous_stack_array_oned(self,
                                       p,
