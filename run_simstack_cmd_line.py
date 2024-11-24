@@ -45,6 +45,7 @@ import logging
 # Modules within this package
 from simstackwrapper import SimstackWrapper
 
+os.environ["DATAPATH"] = "../newdata/"
 def main():
     # Set up logging
     logging.basicConfig(
@@ -56,7 +57,7 @@ def main():
     if len(sys.argv) > 1:
         param_file_path = sys.argv[1]
     else:
-        param_file_path = os.path.join('config', 'example.ini')
+        param_file_path = os.path.join('config', 'linsimstack.ini')
 
     # Instantiate SIMSTACK object
     simstack_object = SimstackWrapper(param_file_path, save_automatically=False,
