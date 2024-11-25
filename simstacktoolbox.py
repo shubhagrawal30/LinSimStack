@@ -12,6 +12,9 @@ from scipy.ndimage.filters import gaussian_filter
 from scipy.optimize import curve_fit
 from simstackcosmologyestimators import SimstackCosmologyEstimators
 
+from scipy.signal import fftconvolve
+# used in smoothing cube layers by psfs
+
 pi = 3.141592653589793
 L_sun = 3.839e26  # W
 c = 299792458.0  # m/s
@@ -639,34 +642,10 @@ class SimstackToolbox(SimstackCosmologyEstimators):
     def shift_twod(self, seq, x, y):
         out = np.roll(np.roll(seq, int(x), axis=1), int(y), axis=0)
         return out
-
+    
     def smooth_psf(self, mapin, psfin):
-
-        s = np.shape(mapin)
-        mnx = s[0]
-        mny = s[1]
-
-        s = np.shape(psfin)
-        pnx = s[0]
-        pny = s[1]
-
-        psf_x0 = pnx / 2
-        psf_y0 = pny / 2
-        psf = psfin
-        px0 = psf_x0
-        py0 = psf_y0
-
-        # pad psf
-        psfpad = np.zeros([mnx, mny])
-        psfpad[0:pnx, 0:pny] = psf
-
-        # shift psf so that centre is at (0,0)
-        psfpad = self.shift_twod(psfpad, -px0, -py0)
-        smmap = np.real(np.fft.ifft2(np.fft.fft2(mapin) *
-                                     np.fft.fft2(psfpad))
-                        )
-
-        return smmap
+        # use scipy function here for speed
+        return fftconvolve(mapin, psfin, mode='same')
 
     def dist_idl(self, n1, m1=None):
         ''' Copy of IDL's dist.pro

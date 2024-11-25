@@ -13,15 +13,17 @@ from skycatalogs import Skycatalogs
 from simstacktoolbox import SimstackToolbox
 
 from scipy.optimize import lsq_linear # for linear least squares fitting
-import multiprocessing as mp
-from itertools import repeat
+# import multiprocessing as mp
+# from itertools import repeat
+from scipy.signal import fftconvolve
 
-MP_PROCESSES = 8
+# not using this as scipy fftconvolve is fast enough
+# MP_PROCESSES = 4 
 # helper function for multiprocessing convolving layers, needs to be global
-def convolve_layer(arg):
-    func, layer, kern = arg
-    tmap = func(layer, kern)
-    return tmap
+# def convolve_layer(arg):
+#     func, layer, kern, = arg
+#     tmap = func(layer, kern)
+#     return tmap
 class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
 
     stack_successful = False
@@ -168,7 +170,6 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
         :param catalog: Catalog containing columns for ra, dec, and defining bins.
         :param labels: Cube layer labels.
         :param add_foreground: If True adds foreground layer.
-        :param crop_circles: If True crops unnecessary pixels.
         :param bootstrap: Integer number as rng seed.
         :param force_fwhm: Float target fwhm to smooth degrade maps to.
         :param randomize: If True randomize source positions.
@@ -510,6 +511,8 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
 
         print("Step 2: Convolve Layers and put in pixels")
         # STEP 2  - Convolve Layers and put in pixels
+        import time
+        start = time.time()
         if "write_simmaps" in self.config_dict["general"]["error_estimator"]:
             if self.config_dict["general"]["error_estimator"]["write_simmaps"] == 1:
                 map_dict["convolved_layer_cube"] = np.zeros(np.shape(layers))
@@ -547,10 +550,8 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
         
         
         path_layer = r'./temp/layers/'
-        args = zip(repeat(self.smooth_psf), layers, repeat(kern))
-        with mp.Pool(MP_PROCESSES) as pool:
-            tmaps = pool.map(convolve_layer, args)
-        for umap, tmap in enumerate(tmaps):
+        for umap, layer in enumerate(layers):
+            tmap = fftconvolve(layer, kern, mode='same')
             mean_tmap = np.mean(tmap[ind_fit])
             cfits_maps[umap, :] = tmap[ind_fit] - mean_tmap # TODO(shubh): what does this mean subtraction do?
             if "convolved_layer_cube" in map_dict:
@@ -574,7 +575,9 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
         # put map and noisemap in last two layers
         cfits_maps[-2, :] = cmap[ind_fit]
         cfits_maps[-1, :] = cnoise[ind_fit]
-
+        
+        print("Time to make layers cube: ", time.time() - start)
+        exit()
         return {'cube': cfits_maps, 'labels': trimmed_labels, 'ind_fit': ind_fit, 'cms': cms}
 
     def stack_in_wavelengths(self,
@@ -645,28 +648,30 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                         fit2d += cov_ss_1d.params[param_label].value * layer
                     else:
                         fit2d += cov_ss_1d.params[param_label].value
-                res2d = map2d - fit2d
-                res2d_err = np.zeros(cms)
-                res2d_err[ind_fit] = cov_ss_1d.residual
-                mask = np.zeros(np.shape(layer))
+                mask = np.zeros(np.shape(layer)) * np.nan
                 mask[ind_fit] = 1
-                fit2d_masked = fit2d * mask
+                fit2d = fit2d * mask
+                
+                res2d = map2d - fit2d
+                res2d_err = np.zeros(cms) * np.nan
+                res2d_err[ind_fit] = cov_ss_1d.residual
                 
                 from matplotlib import pyplot as plt
                 fig, ((ax1, ax2), (ax3, ax4), (ax5, ax6)) = plt.subplots(3, 2, figsize=(20, 30))
-                plt.colorbar(ax1.imshow(map2d), ax=ax1)
-                plt.colorbar(ax2.imshow(fit2d), ax=ax2)
-                plt.colorbar(ax3.imshow(res2d), ax=ax3)
-                plt.colorbar(ax4.imshow(res2d_err), ax=ax4)
-                plt.colorbar(ax5.imshow(mask), ax=ax5)
-                plt.colorbar(ax6.imshow(fit2d_masked), ax=ax6)
+                plt.colorbar(ax1.imshow(map2d, vmin=np.percentile(map2d, 5), vmax=np.percentile(map2d, 95)), ax=ax1)
+                plt.colorbar(ax2.imshow(fit2d, vmin=np.percentile(fit2d, 5), vmax=np.percentile(fit2d, 95)), ax=ax2)
+                plt.colorbar(ax3.imshow(res2d, vmin=np.percentile(res2d, 5), vmax=np.percentile(res2d, 95)), ax=ax3)
+                plt.colorbar(ax4.imshow(res2d_err, vmin=np.percentile(res2d_err, 5), vmax=np.percentile(res2d_err, 95), ax=ax4))
+                plt.colorbar(ax5.imshow(res2d / map2d, vmin=np.percentile(res2d / map2d, 5), vmax=np.percentile(res2d / map2d, 95), ax=ax5))
+                plt.colorbar(ax6.imshow(fit2d / map2d, vmin=0.95, vmax=1.05), ax=ax6)
+                # # plt.colorbar(ax6.imshow(np.log10(np.abs(res2d / map2d))), ax=ax6)
                 
-                ax1.set_title('map')
-                ax2.set_title('fit')
-                ax3.set_title('residual')
-                ax4.set_title('residual / error')
-                ax5.set_title('mask')
-                ax6.set_title('fit * mask')
+                ax1.set_title('map * mask')
+                ax2.set_title('fit * mask')
+                ax3.set_title('residual * mask')
+                ax4.set_title('residual / error * mask')
+                ax5.set_title('residual / map * mask')
+                ax6.set_title('fit / map * mask')
                 plt.savefig(os.path.join('./temp/', f'fit_map_resid_{wv}.png'))
                 plt.close()
 
