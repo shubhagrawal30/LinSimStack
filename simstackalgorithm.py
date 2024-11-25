@@ -212,8 +212,6 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
             llists = np.prod(nlists)
             #pdb.set_trace()
 
-        import time
-        start = time.time()
         print("Step 1: Making Layers Cube")
         # STEP 1  - Make Layers Cube
         layers = np.zeros([llists, cms[0], cms[1]])
@@ -575,9 +573,7 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
         # put map and noisemap in last two layers
         cfits_maps[-2, :] = cmap[ind_fit]
         cfits_maps[-1, :] = cnoise[ind_fit]
-        
-        print("Time to make layers cube: ", time.time() - start)
-        exit()
+
         return {'cube': cfits_maps, 'labels': trimmed_labels, 'ind_fit': ind_fit, 'cms': cms}
 
     def stack_in_wavelengths(self,
@@ -661,8 +657,8 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                 plt.colorbar(ax1.imshow(map2d, vmin=np.percentile(map2d, 5), vmax=np.percentile(map2d, 95)), ax=ax1)
                 plt.colorbar(ax2.imshow(fit2d, vmin=np.percentile(fit2d, 5), vmax=np.percentile(fit2d, 95)), ax=ax2)
                 plt.colorbar(ax3.imshow(res2d, vmin=np.percentile(res2d, 5), vmax=np.percentile(res2d, 95)), ax=ax3)
-                plt.colorbar(ax4.imshow(res2d_err, vmin=np.percentile(res2d_err, 5), vmax=np.percentile(res2d_err, 95), ax=ax4))
-                plt.colorbar(ax5.imshow(res2d / map2d, vmin=np.percentile(res2d / map2d, 5), vmax=np.percentile(res2d / map2d, 95), ax=ax5))
+                plt.colorbar(ax4.imshow(res2d_err, vmin=np.percentile(res2d_err, 5), vmax=np.percentile(res2d_err, 95)), ax=ax4)
+                plt.colorbar(ax5.imshow(res2d / map2d, vmin=np.percentile(res2d / map2d, 5), vmax=np.percentile(res2d / map2d, 95)), ax=ax5)
                 plt.colorbar(ax6.imshow(fit2d / map2d, vmin=0.95, vmax=1.05), ax=ax6)
                 # # plt.colorbar(ax6.imshow(np.log10(np.abs(res2d / map2d))), ax=ax6)
                 
@@ -720,11 +716,14 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
             fit_params.add(parameter_label, value=1e-3 * np.random.randn())
 
         print("Step 3: Minimizing to get Best Fit Parameters")
+        import time
+        start = time.time()
         # cov_ss_1d = minimize(self.simultaneous_stack_array_oned, fit_params,
         #                      args=(np.ndarray.flatten(cube),),
         #                      kws={'data1d': np.ndarray.flatten(imap), 'err1d': np.ndarray.flatten(ierr)},
         #                      nan_policy='propagate')
         cov_ss_1d = self.linear_minimize(fit_params, cube, imap, ierr)
+        print("Minimization took {0:0.2f} seconds".format(time.time() - start))
         return cov_ss_1d
 
 
@@ -759,7 +758,7 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
         layers /= err[:, np.newaxis]
         data /= err
         
-        result = lsq_linear(layers, data, bounds=(0, 1))
+        result = lsq_linear(layers, data, lsq_solver="exact", bounds=(0, 1))
         
         if False:
             from matplotlib import pyplot as plt
