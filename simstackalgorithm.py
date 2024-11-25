@@ -11,8 +11,17 @@ from lmfit import Parameters, minimize, fit_report
 from skymaps import Skymaps
 from skycatalogs import Skycatalogs
 from simstacktoolbox import SimstackToolbox
-from scipy.optimize import lsq_linear # for linear least squares fitting
 
+from scipy.optimize import lsq_linear # for linear least squares fitting
+import multiprocessing as mp
+from itertools import repeat
+
+MP_PROCESSES = 8
+# helper function for multiprocessing convolving layers, needs to be global
+def convolve_layer(arg):
+    func, layer, kern = arg
+    tmap = func(layer, kern)
+    return tmap
 class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
 
     stack_successful = False
@@ -527,40 +536,30 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                 kern = self.gauss_kern(fwhm, np.floor(fwhm * 10) / pix, pix)
         else:
             kern = self.gauss_kern(fwhm, np.floor(fwhm * 10) / pix, pix)
-
-        for umap in range(nlayers):
-            layer = layers[umap, :, :]
-            tmap = self.smooth_psf(layer, kern)
-
-            # write layers to fits files here
-            if write_fits_layers:
-                path_layer = r'./temp/layers/'
-                name_layer = 'layer_'+str(umap)+'.fits'
-                name_layer = '{0}__fwhm_{1:0.1f}'.format(trimmed_labels[umap], fwhm).replace('.','p')+'.fits'
-                if 'foreground_layer' not in trimmed_labels[umap]:
-                    hdu = fits.PrimaryHDU(tmap, header=hd)
-                    hdul = fits.HDUList([hdu])
-                    hdul.writeto(os.path.join(path_layer, name_layer), overwrite=True)
-                    if True:
-                        from matplotlib import pyplot as plt
-                        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 30))
-                        plt.colorbar(ax1.imshow(tmap, vmin=0.5, vmax=0.8), ax=ax1)
-                        plt.colorbar(ax2.imshow(layer), ax=ax2)
-                        mask = np.zeros(np.shape(layer))
-                        mask[ind_fit] = 1
-                        plt.colorbar(ax3.imshow(mask), ax=ax3)
-                        plt.savefig(os.path.join(path_layer, name_layer.replace('.fits', '.png')))
-                        plt.close()
-                    
-
-            # Remove mean from map
-            cfits_maps[umap, :] = tmap[ind_fit] - np.mean(tmap[ind_fit]) # TODO(shubh): what does this mean subtraction do?
-
-            # Add layer to write_simmaps cube
+        
+        
+        path_layer = r'./temp/layers/'
+        args = zip(repeat(self.smooth_psf), layers, repeat(kern))
+        with mp.Pool(MP_PROCESSES) as pool:
+            tmaps = pool.map(convolve_layer, args)
+        for umap, tmap in enumerate(tmaps):
+            mean_tmap = np.mean(tmap[ind_fit])
+            cfits_maps[umap, :] = tmap[ind_fit] - mean_tmap # TODO(shubh): what does this mean subtraction do?
             if "convolved_layer_cube" in map_dict:
-                map_dict["convolved_layer_cube"][umap, :, :] = tmap - np.mean(tmap[ind_fit])
-
-            # If add_foreground=True, add foreground layer of ones.
+                map_dict["convolved_layer_cube"][umap, :, :] = tmap - mean_tmap
+            if write_fits_layers and 'foreground_layer' not in trimmed_labels[umap]:
+                name_layer = '{0}__fwhm_{1:0.1f}'.format(trimmed_labels[umap], fwhm).replace('.','p')+'.fits'
+                layer = layers[umap, :, :]
+                hdu = fits.PrimaryHDU(tmap, header=hd)
+                hdul = fits.HDUList([hdu])
+                hdul.writeto(os.path.join(path_layer, name_layer), overwrite=True)
+                if True:
+                    from matplotlib import pyplot as plt
+                    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 20))
+                    plt.colorbar(ax1.imshow(tmap, vmin=0.5, vmax=0.8), ax=ax1)
+                    plt.colorbar(ax2.imshow(layer), ax=ax2)
+                    plt.savefig(os.path.join(path_layer, name_layer.replace('.fits', '.png')))
+                    plt.close()
         if add_foreground:
             cfits_maps[-3, :] = np.ones(np.shape(cmap[ind_fit]))
 
@@ -641,17 +640,25 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                 res2d = map2d - fit2d
                 res2d_err = np.zeros(cms)
                 res2d_err[ind_fit] = cov_ss_1d.residual
+                mask = np.zeros(np.shape(layer))
+                mask[ind_fit] = 1
+                fit2d_masked = fit2d * mask
                 
                 from matplotlib import pyplot as plt
-                fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(10, 10))
+                fig, ((ax1, ax2), (ax3, ax4), (ax5, ax6)) = plt.subplots(3, 2, figsize=(20, 30))
                 plt.colorbar(ax1.imshow(map2d), ax=ax1)
                 plt.colorbar(ax2.imshow(fit2d), ax=ax2)
                 plt.colorbar(ax3.imshow(res2d), ax=ax3)
                 plt.colorbar(ax4.imshow(res2d_err), ax=ax4)
+                plt.colorbar(ax5.imshow(mask), ax=ax5)
+                plt.colorbar(ax6.imshow(fit2d_masked), ax=ax6)
+                
                 ax1.set_title('map')
                 ax2.set_title('fit')
                 ax3.set_title('residual')
                 ax4.set_title('residual / error')
+                ax5.set_title('mask')
+                ax6.set_title('fit * mask')
                 plt.savefig(os.path.join('./temp/', f'fit_map_resid_{wv}.png'))
                 plt.close()
 
