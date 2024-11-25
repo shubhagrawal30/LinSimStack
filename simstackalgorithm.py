@@ -211,13 +211,17 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
             llists = np.prod(nlists)
             #pdb.set_trace()
 
+        import time
+        start = time.time()
         print("Step 1: Making Layers Cube")
         # STEP 1  - Make Layers Cube
         layers = np.zeros([llists, cms[0], cms[1]])
+        indices_to_delete = []
 
         trimmed_labels = []
         ilayer = 0
         ilabel = 0
+        xys = np.array(self.get_x_y_from_ra_dec(wmap, cms, np.ones(len(ra_series), dtype=bool), ra_series, dec_series))
         for ipop in range(nlists[0]):
             if len(nlists) > 1:
                 for jpop in range(nlists[1]):
@@ -234,10 +238,7 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                                                               (catalog[keys[4]] == mpop) & (catalog[keys[5]] == npop)
                                                     if bootstrap:
                                                         if sum(ind_src) > 4:
-                                                            real_x, real_y = self.get_x_y_from_ra_dec(wmap, cms,
-                                                                                                      ind_src,
-                                                                                                      ra_series,
-                                                                                                      dec_series)
+                                                            real_x, real_y = xys[:, ind_src]
                                                             bt_split = 0.80
                                                             # jk_split = np.random.uniform(0.3, 0.7)
                                                             # print('jackknife split = ', jk_split)
@@ -253,15 +254,13 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                                                             trimmed_labels.append(labels[ilabel + 1])
                                                             ilayer += 2
                                                         else:
-                                                            layers = np.delete(layers, ilayer + 1, 0)
-                                                            layers = np.delete(layers, ilayer, 0)
+                                                            indices_to_delete.append(ilayer)
+                                                            indices_to_delete.append(ilayer + 1)
+                                                            ilayer += 2
                                                         ilabel += 2
                                                     else:
                                                         if sum(ind_src) > 0:
-                                                            real_x, real_y = self.get_x_y_from_ra_dec(wmap, cms,
-                                                                                                      ind_src,
-                                                                                                      ra_series,
-                                                                                                      dec_series)
+                                                            real_x, real_y = xys[:, ind_src]
                                                             if randomize:
                                                                 # print('Shuffling!',len(real_x))
                                                                 # print(real_x[0], real_y[0])
@@ -279,7 +278,8 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                                                             trimmed_labels.append(labels[ilabel])
                                                             ilayer += 1
                                                         else:
-                                                            layers = np.delete(layers, ilayer, 0)
+                                                            indices_to_delete.append(ilayer)
+                                                            ilayer += 1
                                                         ilabel += 1
                                             else:
 
@@ -288,9 +288,7 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                                                           (catalog[keys[4]] == mpop)
                                                 if bootstrap:
                                                     if sum(ind_src) > 4:
-                                                        real_x, real_y = self.get_x_y_from_ra_dec(wmap, cms, ind_src,
-                                                                                                  ra_series,
-                                                                                                  dec_series)
+                                                        real_x, real_y = xys[:, ind_src]
                                                         bt_split = 0.80
                                                         # jk_split = np.random.uniform(0.3, 0.7)
                                                         # print('jackknife split = ', jk_split)
@@ -305,14 +303,13 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                                                         trimmed_labels.append(labels[ilabel + 1])
                                                         ilayer += 2
                                                     else:
-                                                        layers = np.delete(layers, ilayer + 1, 0)
-                                                        layers = np.delete(layers, ilayer, 0)
+                                                        indices_to_delete.append(ilayer)
+                                                        indices_to_delete.append(ilayer + 1)
+                                                        ilayer += 2
                                                     ilabel += 2
                                                 else:
                                                     if sum(ind_src) > 0:
-                                                        real_x, real_y = self.get_x_y_from_ra_dec(wmap, cms, ind_src,
-                                                                                                  ra_series,
-                                                                                                  dec_series)
+                                                        real_x, real_y = xys[:, ind_src]
                                                         if randomize:
                                                             # print('Shuffling!',len(real_x))
                                                             # print(real_x[0], real_y[0])
@@ -328,15 +325,15 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                                                         trimmed_labels.append(labels[ilabel])
                                                         ilayer += 1
                                                     else:
-                                                        layers = np.delete(layers, ilayer, 0)
+                                                        indices_to_delete.append(ilayer)
+                                                        ilayer += 1
                                                     ilabel += 1
                                     else:
                                         ind_src = (catalog[keys[0]] == ipop) & (catalog[keys[1]] == jpop) & (
                                                     catalog[keys[2]] == kpop) & (catalog[keys[3]] == lpop)
                                         if bootstrap:
                                             if sum(ind_src) > 4:
-                                                real_x, real_y = self.get_x_y_from_ra_dec(wmap, cms, ind_src, ra_series,
-                                                                                          dec_series)
+                                                real_x, real_y = xys[:, ind_src]
                                                 bt_split = 0.80
                                                 # jk_split = np.random.uniform(0.3, 0.7)
                                                 # print('jackknife split = ', jk_split)
@@ -353,13 +350,13 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                                                 trimmed_labels.append(labels[ilabel + 1])
                                                 ilayer += 2
                                             else:
-                                                layers = np.delete(layers, ilayer + 1, 0)
-                                                layers = np.delete(layers, ilayer, 0)
+                                                indices_to_delete.append(ilayer)
+                                                indices_to_delete.append(ilayer + 1)
+                                                ilayer += 2
                                             ilabel += 2
                                         else:
                                             if sum(ind_src) > 0:
-                                                real_x, real_y = self.get_x_y_from_ra_dec(wmap, cms, ind_src, ra_series,
-                                                                                          dec_series)
+                                                real_x, real_y = xys[:, ind_src]
                                                 if randomize:
                                                     # print('Shuffling!',len(real_x))
                                                     # print(real_x[0], real_y[0])
@@ -375,13 +372,14 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                                                 trimmed_labels.append(labels[ilabel])
                                                 ilayer += 1
                                             else:
-                                                layers = np.delete(layers, ilayer, 0)
+                                                indices_to_delete.append(ilayer)
+                                                ilayer += 1
                                             ilabel += 1
                             else:
                                 ind_src = (catalog[keys[0]] == ipop) & (catalog[keys[1]] == jpop) & (catalog[keys[2]] == kpop)
                                 if bootstrap:
                                     if sum(ind_src) > 4:
-                                        real_x, real_y = self.get_x_y_from_ra_dec(wmap, cms, ind_src, ra_series, dec_series)
+                                        real_x, real_y = xys[:, ind_src]
                                         bt_split = 0.80
                                         #jk_split = np.random.uniform(0.3, 0.7)
                                         #print('jackknife split = ', jk_split)
@@ -397,12 +395,13 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                                         trimmed_labels.append(labels[ilabel + 1])
                                         ilayer += 2
                                     else:
-                                        layers = np.delete(layers, ilayer+1, 0)
-                                        layers = np.delete(layers, ilayer, 0)
+                                        indices_to_delete.append(ilayer)
+                                        indices_to_delete.append(ilayer+1)
+                                        ilayer += 2
                                     ilabel += 2
                                 else:
                                     if sum(ind_src) > 0:
-                                        real_x, real_y = self.get_x_y_from_ra_dec(wmap, cms, ind_src, ra_series, dec_series)
+                                        real_x, real_y = xys[:, ind_src]
                                         if randomize:
                                             #print('Shuffling!',len(real_x))
                                             #print(real_x[0], real_y[0])
@@ -416,13 +415,14 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                                         trimmed_labels.append(labels[ilabel])
                                         ilayer += 1
                                     else:
-                                        layers = np.delete(layers, ilayer, 0)
+                                        indices_to_delete.append(ilayer)
+                                        ilayer += 1
                                     ilabel += 1
                     else:
                         ind_src = (catalog[keys[0]] == ipop) & (catalog[keys[1]] == jpop)
                         if bootstrap:
                             if sum(ind_src) > 4:
-                                real_x, real_y = self.get_x_y_from_ra_dec(wmap, cms, ind_src, ra_series, dec_series)
+                                real_x, real_y = xys[:, ind_src]
                                 if randomize:
                                     #np.random.shuffle(real_x)
                                     #np.random.shuffle(real_y)
@@ -441,12 +441,13 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                                 trimmed_labels.append(labels[ilabel+1])
                                 ilayer += 2
                             else:
-                                layers = np.delete(layers, ilayer+1, 0)
-                                layers = np.delete(layers, ilayer, 0)
+                                indices_to_delete.append(ilayer)
+                                indices_to_delete.append(ilayer + 1)
+                                ilayer += 2
                             ilabel += 2
                         else:
                             if sum(ind_src) > 0:
-                                real_x, real_y = self.get_x_y_from_ra_dec(wmap, cms, ind_src, ra_series, dec_series)
+                                real_x, real_y = xys[:, ind_src]
                                 if randomize:
                                     #np.random.shuffle(real_x)
                                     #np.random.shuffle(real_y)
@@ -456,13 +457,14 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                                 trimmed_labels.append(labels[ilabel])
                                 ilayer += 1
                             else:
-                                layers = np.delete(layers, ilayer, 0)
+                                indices_to_delete.append(ilayer)
+                                ilayer += 1
                             ilabel += 1
             else:
                 ind_src = (catalog[keys[0]] == ipop)
                 if bootstrap:
                     if sum(ind_src) > 4:
-                        real_x, real_y = self.get_x_y_from_ra_dec(wmap, cms, ind_src, ra_series, dec_series)
+                        real_x, real_y = xys[:, ind_src]
                         if randomize:
                             #np.random.shuffle(real_x)
                             #np.random.shuffle(real_y)
@@ -480,12 +482,13 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                         trimmed_labels.append(labels[ilabel + 1])
                         ilayer += 2
                     else:
-                        layers = np.delete(layers, ilayer + 1, 0)
-                        layers = np.delete(layers, ilayer, 0)
+                        indices_to_delete.append(ilayer)
+                        indices_to_delete.append(ilayer + 1)
+                        ilayer += 2
                     ilabel += 2
                 else:
                     if sum(ind_src) > 0:
-                        real_x, real_y = self.get_x_y_from_ra_dec(wmap, cms, ind_src, ra_series, dec_series)
+                        real_x, real_y = xys[:, ind_src]
                         if randomize:
                             #np.random.shuffle(real_x)
                             #np.random.shuffle(real_y)
@@ -495,9 +498,14 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                         trimmed_labels.append(labels[ilabel])
                         ilayer += 1
                     else:
-                        layers = np.delete(layers, ilayer, 0)
+                        indices_to_delete.append(ilayer)
+                        ilayer += 1
                     ilabel += 1
-
+        
+        # reduce to one delete operation
+        if len(indices_to_delete) > 0:
+            layers = np.delete(layers, indices_to_delete, 0)
+        
         nlayers = np.shape(layers)[0]
 
         print("Step 2: Convolve Layers and put in pixels")
