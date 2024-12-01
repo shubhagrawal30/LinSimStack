@@ -18,11 +18,12 @@ from scipy.optimize import lsq_linear # for linear least squares fitting
 from scipy.signal import fftconvolve
 import time
 
-ITERATIVE_MASK = True
+ITERATIVE_MASK = 1
+SRC_THRES = 10
 
 DEBUG_PLOTS_1 = False
 DEBUG_PLOTS_2 = True
-DEBUG_PLOTS_3 = True
+DEBUG_PLOTS_3 = False
 DEBUG_PLOTS_4 = True
 
 # not using this as scipy fftconvolve is fast enough
@@ -224,7 +225,7 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
         # STEP 1  - Make Layers Cube
         layers = np.zeros([llists, cms[0], cms[1]])
         indices_to_delete = []
-        src_threshold = 10 # added by Agrawal to remove bins with two few sources, go to Viero code if you set this to 1
+        src_threshold = SRC_THRES # added by Agrawal to remove bins with two few sources, go to Viero code if you set this to 1
         trimmed_labels = []
         ilayer = 0
         ilabel = 0
@@ -663,11 +664,11 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                 
                 from matplotlib import pyplot as plt
                 fig, ((ax1, ax2), (ax3, ax4), (ax5, ax6)) = plt.subplots(3, 2, figsize=(20, 30))
-                plt.colorbar(ax1.imshow(map2d, vmin=np.percentile(map2d, 5), vmax=np.percentile(map2d, 95)), ax=ax1)
-                plt.colorbar(ax2.imshow(fit2d, vmin=np.percentile(fit2d, 5), vmax=np.percentile(fit2d, 95)), ax=ax2)
-                plt.colorbar(ax3.imshow(res2d, vmin=np.percentile(res2d, 5), vmax=np.percentile(res2d, 95)), ax=ax3)
-                plt.colorbar(ax4.imshow(res2d_err, vmin=np.percentile(res2d_err, 5), vmax=np.percentile(res2d_err, 95)), ax=ax4)
-                plt.colorbar(ax5.imshow(res2d / map2d, vmin=np.percentile(res2d / map2d, 5), vmax=np.percentile(res2d / map2d, 95)), ax=ax5)
+                plt.colorbar(ax1.imshow(map2d, vmin=np.nanpercentile(map2d, 5), vmax=np.nanpercentile(map2d, 95)), ax=ax1)
+                plt.colorbar(ax2.imshow(fit2d, vmin=np.nanpercentile(fit2d, 5), vmax=np.nanpercentile(fit2d, 95)), ax=ax2)
+                plt.colorbar(ax3.imshow(res2d, vmin=np.nanpercentile(res2d, 5), vmax=np.nanpercentile(res2d, 95)), ax=ax3)
+                plt.colorbar(ax4.imshow(res2d_err, vmin=np.nanpercentile(res2d_err, 5), vmax=np.nanpercentile(res2d_err, 95)), ax=ax4)
+                plt.colorbar(ax5.imshow(res2d / map2d, vmin=np.nanpercentile(res2d / map2d, 5), vmax=np.nanpercentile(res2d / map2d, 95)), ax=ax5)
                 plt.colorbar(ax6.imshow(fit2d / map2d, vmin=0.95, vmax=1.05), ax=ax6)
                 # # plt.colorbar(ax6.imshow(np.log10(np.abs(res2d / map2d))), ax=ax6)
                 
@@ -785,7 +786,7 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
         # remove mean from model layers: in normal simstack this is done *after*
         # the model has been computed, but here we do it for each component 
         # before to make the model linear in the parameters
-        layers -= np.mean(layers, axis=0)
+        layers[:, :-1] -= np.mean(layers[:, :-1], axis=0)
         data -= np.mean(data) 
         # TODO: what about the last "foreground" layer?
         
@@ -795,8 +796,8 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
         
         result = lsq_linear(layers, data, lsq_solver="exact")#, bounds=(0, np.inf))
         
-        if ITERATIVE_MASK:
-            # Agrawal Dec 1: try adding a iterative fitting schema
+        for ind in range(ITERATIVE_MASK):
+            # Agrawal Dec 1 2024: try adding a iterative fitting schema
             # perform a fit, check residuals, mask large outliers, and then try the fit again
             sigma_threshold = 5.0
             model = layers @ result.x
