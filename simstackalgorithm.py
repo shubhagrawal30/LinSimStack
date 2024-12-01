@@ -18,9 +18,11 @@ from scipy.optimize import lsq_linear # for linear least squares fitting
 from scipy.signal import fftconvolve
 import time
 
+ITERATIVE_MASK = True
+
 DEBUG_PLOTS_1 = False
 DEBUG_PLOTS_2 = True
-DEBUG_PLOTS_3 = False
+DEBUG_PLOTS_3 = True
 DEBUG_PLOTS_4 = True
 
 # not using this as scipy fftconvolve is fast enough
@@ -639,7 +641,7 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                 cube = cube_dict['cube']
                 ind_fit = cube_dict['ind_fit']
                 map2d = np.zeros(cms) * np.nan
-                map2d[ind_fit] = cube_dict['cube'][-2, :]
+                map2d[ind_fit] = cube[-2, :]
                 fit2d = np.zeros(cms)
                 for i, iparam_label in enumerate(cube_dict['labels']):
                     param_label = iparam_label.replace('.', 'p')
@@ -654,8 +656,10 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                 fit2d = fit2d * mask
                 
                 res2d = map2d - fit2d
-                res2d_err = np.zeros(cms) * np.nan
-                res2d_err[ind_fit] = cov_ss_1d.residual
+                # res2d_err = np.zeros(cms) * np.nan
+                # res2d_err[ind_fit] = cov_ss_1d.residual # no longer valid after iterative masking
+                res2d_err = res2d.copy()
+                res2d_err[ind_fit] /= cube[-1, :]
                 
                 from matplotlib import pyplot as plt
                 fig, ((ax1, ax2), (ax3, ax4), (ax5, ax6)) = plt.subplots(3, 2, figsize=(20, 30))
@@ -790,7 +794,21 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
         data /= err
         
         result = lsq_linear(layers, data, lsq_solver="exact")#, bounds=(0, np.inf))
-                
+        
+        if ITERATIVE_MASK:
+            # Agrawal Dec 1: try adding a iterative fitting schema
+            # perform a fit, check residuals, mask large outliers, and then try the fit again
+            sigma_threshold = 5.0
+            model = layers @ result.x
+            residuals = data - model 
+            mask = np.abs(residuals) < (sigma_threshold)
+            # residuals are already scaled by err, should follow standard normal
+            print(np.sum(~mask), len(mask), np.sum(~mask) / len(mask))
+            
+            data = data[mask]
+            layers = layers[mask]
+            result = lsq_linear(layers, data, lsq_solver="exact")
+        
         # calculate chi^2
         model = layers @ result.x
         chi2 = np.sum((data - model) ** 2) # already scaled by err
@@ -810,6 +828,12 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
             plt.figure()
             plt.title(f"ndf {ndf}, rchi2: {rchi2}, chi2: {chi2},")
             plt.hist(data-model, bins=50, range=(-5, 5))
+            plt.show()
+            plt.close()
+            
+            plt.figure()
+            plt.title(f"ndf {ndf}, rchi2: {rchi2}, chi2: {chi2},")
+            plt.hist(data-model, bins=50)
             plt.show()
             plt.close()
             
