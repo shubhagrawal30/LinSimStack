@@ -16,6 +16,12 @@ from scipy.optimize import lsq_linear # for linear least squares fitting
 # import multiprocessing as mp
 # from itertools import repeat
 from scipy.signal import fftconvolve
+import time
+
+DEBUG_PLOTS_1 = False
+DEBUG_PLOTS_2 = True
+DEBUG_PLOTS_3 = False
+DEBUG_PLOTS_4 = True
 
 # not using this as scipy fftconvolve is fast enough
 # MP_PROCESSES = 4 
@@ -216,7 +222,7 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
         # STEP 1  - Make Layers Cube
         layers = np.zeros([llists, cms[0], cms[1]])
         indices_to_delete = []
-
+        src_threshold = 10 # added by Agrawal to remove bins with two few sources, go to Viero code if you set this to 1
         trimmed_labels = []
         ilayer = 0
         ilabel = 0
@@ -236,7 +242,7 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                                                               (catalog[keys[2]] == kpop) & (catalog[keys[3]] == lpop) & \
                                                               (catalog[keys[4]] == mpop) & (catalog[keys[5]] == npop)
                                                     if bootstrap:
-                                                        if sum(ind_src) > 4:
+                                                        if sum(ind_src) >= 5 * src_threshold:
                                                             real_x, real_y = xys[:, ind_src]
                                                             bt_split = 0.80
                                                             # jk_split = np.random.uniform(0.3, 0.7)
@@ -258,7 +264,7 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                                                             ilayer += 2
                                                         ilabel += 2
                                                     else:
-                                                        if sum(ind_src) > 0:
+                                                        if sum(ind_src) >= src_threshold:
                                                             real_x, real_y = xys[:, ind_src]
                                                             if randomize:
                                                                 # print('Shuffling!',len(real_x))
@@ -286,7 +292,7 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                                                           (catalog[keys[2]] == kpop) & (catalog[keys[3]] == lpop) & \
                                                           (catalog[keys[4]] == mpop)
                                                 if bootstrap:
-                                                    if sum(ind_src) > 4:
+                                                    if sum(ind_src) >= 5 * src_threshold:
                                                         real_x, real_y = xys[:, ind_src]
                                                         bt_split = 0.80
                                                         # jk_split = np.random.uniform(0.3, 0.7)
@@ -307,7 +313,7 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                                                         ilayer += 2
                                                     ilabel += 2
                                                 else:
-                                                    if sum(ind_src) > 0:
+                                                    if sum(ind_src) >= src_threshold:
                                                         real_x, real_y = xys[:, ind_src]
                                                         if randomize:
                                                             # print('Shuffling!',len(real_x))
@@ -331,7 +337,7 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                                         ind_src = (catalog[keys[0]] == ipop) & (catalog[keys[1]] == jpop) & (
                                                     catalog[keys[2]] == kpop) & (catalog[keys[3]] == lpop)
                                         if bootstrap:
-                                            if sum(ind_src) > 4:
+                                            if sum(ind_src) >= 5 * src_threshold:
                                                 real_x, real_y = xys[:, ind_src]
                                                 bt_split = 0.80
                                                 # jk_split = np.random.uniform(0.3, 0.7)
@@ -354,7 +360,7 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                                                 ilayer += 2
                                             ilabel += 2
                                         else:
-                                            if sum(ind_src) > 0:
+                                            if sum(ind_src) >= src_threshold:
                                                 real_x, real_y = xys[:, ind_src]
                                                 if randomize:
                                                     # print('Shuffling!',len(real_x))
@@ -377,7 +383,7 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                             else:
                                 ind_src = (catalog[keys[0]] == ipop) & (catalog[keys[1]] == jpop) & (catalog[keys[2]] == kpop)
                                 if bootstrap:
-                                    if sum(ind_src) > 4:
+                                    if sum(ind_src) >= 5 * src_threshold:
                                         real_x, real_y = xys[:, ind_src]
                                         bt_split = 0.80
                                         #jk_split = np.random.uniform(0.3, 0.7)
@@ -399,7 +405,7 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                                         ilayer += 2
                                     ilabel += 2
                                 else:
-                                    if sum(ind_src) > 0:
+                                    if sum(ind_src) >= src_threshold:
                                         real_x, real_y = xys[:, ind_src]
                                         if randomize:
                                             #print('Shuffling!',len(real_x))
@@ -420,7 +426,7 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                     else:
                         ind_src = (catalog[keys[0]] == ipop) & (catalog[keys[1]] == jpop)
                         if bootstrap:
-                            if sum(ind_src) > 4:
+                            if sum(ind_src) >= 5 * src_threshold:
                                 real_x, real_y = xys[:, ind_src]
                                 if randomize:
                                     #np.random.shuffle(real_x)
@@ -445,7 +451,7 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                                 ilayer += 2
                             ilabel += 2
                         else:
-                            if sum(ind_src) > 0:
+                            if sum(ind_src) >= src_threshold:
                                 real_x, real_y = xys[:, ind_src]
                                 if randomize:
                                     #np.random.shuffle(real_x)
@@ -462,7 +468,7 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
             else:
                 ind_src = (catalog[keys[0]] == ipop)
                 if bootstrap:
-                    if sum(ind_src) > 4:
+                    if sum(ind_src) >= 5 * src_threshold:
                         real_x, real_y = xys[:, ind_src]
                         if randomize:
                             #np.random.shuffle(real_x)
@@ -486,7 +492,7 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                         ilayer += 2
                     ilabel += 2
                 else:
-                    if sum(ind_src) > 0:
+                    if sum(ind_src) >= src_threshold:
                         real_x, real_y = xys[:, ind_src]
                         if randomize:
                             #np.random.shuffle(real_x)
@@ -509,8 +515,6 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
 
         print("Step 2: Convolve Layers and put in pixels")
         # STEP 2  - Convolve Layers and put in pixels
-        import time
-        start = time.time()
         if "write_simmaps" in self.config_dict["general"]["error_estimator"]:
             if self.config_dict["general"]["error_estimator"]["write_simmaps"] == 1:
                 map_dict["convolved_layer_cube"] = np.zeros(np.shape(layers))
@@ -560,7 +564,7 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                 hdu = fits.PrimaryHDU(tmap, header=hd)
                 hdul = fits.HDUList([hdu])
                 hdul.writeto(os.path.join(path_layer, name_layer), overwrite=True)
-                if True:
+                if DEBUG_PLOTS_1:
                     from matplotlib import pyplot as plt
                     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 20))
                     plt.colorbar(ax1.imshow(tmap, vmin=0.5, vmax=0.8), ax=ax1)
@@ -606,6 +610,7 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
         # Loop through wavelengths
         for wv in map_keys:
             print(wv)
+            start = time.time()
 
             map_dict = self.maps_dict[wv].copy()
 
@@ -629,7 +634,7 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
             cov_ss_dict[wv] = cov_ss_1d
             
             # plot fit, map, and residuals
-            if True:
+            if DEBUG_PLOTS_2:
                 cms = cube_dict['cms']
                 cube = cube_dict['cube']
                 ind_fit = cube_dict['ind_fit']
@@ -662,6 +667,13 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                 plt.colorbar(ax6.imshow(fit2d / map2d, vmin=0.95, vmax=1.05), ax=ax6)
                 # # plt.colorbar(ax6.imshow(np.log10(np.abs(res2d / map2d))), ax=ax6)
                 
+                suptitle = (
+                    rf"$\chi_r^2$ = {cov_ss_1d.rchi2:.4f}      "
+                    rf"bins: {len(cov_ss_1d.params)}      "
+                    rf"data: {np.sum(ind_fit)}"
+                )
+                fig.suptitle(suptitle, fontsize=48, fontweight='bold')
+                
                 ax1.set_title('map * mask')
                 ax2.set_title('fit * mask')
                 ax3.set_title('residual * mask')
@@ -670,6 +682,11 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                 ax6.set_title('fit / map * mask')
                 plt.savefig(os.path.join('./temp/', f'fit_map_resid_{wv}.png'))
                 plt.close()
+                
+                hdulist = [fits.PrimaryHDU()]
+                hdulist += [fits.ImageHDU(arr) for arr in [map2d, fit2d, res2d, res2d_err, mask]]
+                hdulist = fits.HDUList(hdulist)
+                hdulist.writeto(os.path.join('./temp/', f'fit_map_resid_{wv}.fits'), overwrite=True)
 
             # Write simulated maps from best-fits
             if self.config_dict["general"]["error_estimator"]["write_simmaps"]:
@@ -681,7 +698,24 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                 self.maps_dict[wv]["flattened_simmap"] = np.sum(map_dict["convolved_layer_cube"], axis=0)
                 if 'foreground_layer' in cube_dict['labels']:
                     self.maps_dict[wv]["flattened_simmap"] += cov_ss_1d.params["foreground_layer"].value
-
+            print("{} took {} seconds".format(wv, time.time() - start))
+        
+        if DEBUG_PLOTS_4:
+            from matplotlib import pyplot as plt
+            md = self.maps_dict
+            plt.figure(figsize=(9, 4))
+            plt.axis('off')
+            table = [(wv, md[wv]['wavelength'], str(md[wv]['fwhm']) + "\'", f"{cov_ss_dict[wv].rchi2:.4f}", cov_ss_dict[wv].ndf) \
+                for wv in map_keys]
+            colLabels = (r"Map", r"$\lambda$", "FWHM", r"$\chi_r^2$", r"$n_{d.o.f.}$")
+            table = plt.table(cellText=table, loc="center", cellLoc="center",
+                    colLabels=colLabels, colColours=["c",] * 5)
+            table.auto_set_font_size(False)
+            table.set_fontsize(16)
+            table.scale(1.2, 2)
+            plt.savefig(os.path.join('./temp/', f'stats.png'))
+            plt.close()
+        
         return cov_ss_dict
 
     def regress_cube_layers(self,
@@ -716,14 +750,11 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
             fit_params.add(parameter_label, value=1e-3 * np.random.randn())
 
         print("Step 3: Minimizing to get Best Fit Parameters")
-        import time
-        start = time.time()
         # cov_ss_1d = minimize(self.simultaneous_stack_array_oned, fit_params,
         #                      args=(np.ndarray.flatten(cube),),
         #                      kws={'data1d': np.ndarray.flatten(imap), 'err1d': np.ndarray.flatten(ierr)},
         #                      nan_policy='propagate')
         cov_ss_1d = self.linear_minimize(fit_params, cube, imap, ierr)
-        print("Minimization took {0:0.2f} seconds".format(time.time() - start))
         return cov_ss_1d
 
 
@@ -758,17 +789,30 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
         layers /= err[:, np.newaxis]
         data /= err
         
-        result = lsq_linear(layers, data, lsq_solver="exact", bounds=(0, 1))
+        result = lsq_linear(layers, data, lsq_solver="exact")#, bounds=(0, np.inf))
+                
+        # calculate chi^2
+        model = layers @ result.x
+        chi2 = np.sum((data - model) ** 2) # already scaled by err
+        ndf = len(data) - len(result.x)
+        rchi2 = chi2 / ndf
         
-        if False:
+        if DEBUG_PLOTS_3:
             from matplotlib import pyplot as plt
             plt.figure()
             plt.plot(data, label='data')
-            plt.plot(np.dot(layers, result.x), label='model')
+            plt.plot(model, label='model')
+            plt.title(rchi2)
             plt.legend()
             plt.show()
             plt.close()
-        
+            
+            plt.figure()
+            plt.title(f"ndf {ndf}, rchi2: {rchi2}, chi2: {chi2},")
+            plt.hist(data-model, bins=50, range=(-5, 5))
+            plt.show()
+            plt.close()
+            
         # now, in order to make life easier, we want to make the structure of
         # this object similar to the lmfit result object
                 
@@ -788,6 +832,8 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                         "message": result.message,
                         "success": result.success,
                         "status": result.status,
+                        "rchi2": rchi2,
+                        "ndf": ndf,
                         })
         return return_obj
 
