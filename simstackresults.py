@@ -85,7 +85,7 @@ class SimstackResults(SimstackToolbox):
 											for l, lval in enumerate(label_dict[label_keys[4]]):
 												if len(label_keys) > 5:
 													for m, mval in enumerate(label_dict[label_keys[5]]):
-														label = "__".join([zval, ival, jval, kval, lval, mval]).replace('.', 'p')
+														label = "__".join([zval, ival, jval, kval, lval, mval]).replace('.', 'p').replace('-', 'm')
 														# CHECK THAT LABEL EXISTS FIRST
 														if label in results_object:
 															if label + '__bootstrap2' in results_object:
@@ -102,7 +102,7 @@ class SimstackResults(SimstackToolbox):
 																error_array[z, i, j, k, l, m] = results_object[
 																	label].stderr
 												else:
-													label = "__".join([zval, ival, jval, kval, lval]).replace('.', 'p')
+													label = "__".join([zval, ival, jval, kval, lval]).replace('.', 'p').replace('-', 'm')
 													# CHECK THAT LABEL EXISTS FIRST
 													if label in results_object:
 														if label + '__bootstrap2' in results_object:
@@ -117,7 +117,7 @@ class SimstackResults(SimstackToolbox):
 														if len_results_dict_keys == 1:
 															error_array[z, i, j, k, l] = results_object[label].stderr
 										else:
-											label = "__".join([zval, ival, jval, kval]).replace('.', 'p')
+											label = "__".join([zval, ival, jval, kval]).replace('.', 'p').replace('-', 'm')
 											# CHECK THAT LABEL EXISTS FIRST
 											if label in results_object:
 												if label + '__bootstrap2' in results_object:
@@ -131,7 +131,7 @@ class SimstackResults(SimstackToolbox):
 												if len_results_dict_keys == 1:
 													error_array[z, i, j, k] = results_object[label].stderr
 								else:
-									label = "__".join([zval, ival, jval]).replace('.', 'p')
+									label = "__".join([zval, ival, jval]).replace('.', 'p').replace('-', 'm')
 									# CHECK THAT LABEL EXISTS FIRST
 									if label in results_object:
 										if label + '__bootstrap2' in results_object:
@@ -143,7 +143,7 @@ class SimstackResults(SimstackToolbox):
 										if len_results_dict_keys == 1:
 											error_array[z, i, j] = results_object[label].stderr
 						else:
-							label = "__".join([zval, ival]).replace('.', 'p')
+							label = "__".join([zval, ival]).replace('.', 'p').replace('-', 'm')
 							if label in results_object:
 								if label + '__bootstrap2' in results_object:
 									outlier_array[iboot, z, i] = results_object[label].value
@@ -195,7 +195,7 @@ class SimstackResults(SimstackToolbox):
 					for i, ival in enumerate(label_dict[label_keys[1]]):
 						if len(label_keys) > 2:
 							for j, jval in enumerate(label_dict[label_keys[2]]):
-								label = "__".join([zval, ival, jval]).replace('.', 'p')
+								label = "__".join([zval, ival, jval]).replace('.', 'p').replace('-', 'm')
 								# CHECK THAT LABEL EXISTS FIRST
 								if label in results_object:
 									if label+'__bootstrap2' in results_object:
@@ -207,7 +207,7 @@ class SimstackResults(SimstackToolbox):
 									if len_results_dict_keys == 1:
 										error_array[z, i, j] = results_object[label].stderr
 						else:
-							label = "__".join([zval, ival]).replace('.', 'p')
+							label = "__".join([zval, ival]).replace('.', 'p').replace('-', 'm')
 							if label in results_object:
 								if label + '__bootstrap2' in results_object:
 									outlier_array[iboot, z, i] = results_object[label].value

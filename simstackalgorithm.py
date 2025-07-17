@@ -11,6 +11,7 @@ from lmfit import Parameters, minimize, fit_report
 from skymaps import Skymaps
 from skycatalogs import Skycatalogs
 from simstacktoolbox import SimstackToolbox
+import gc
 
 from scipy.optimize import lsq_linear # for linear least squares fitting
 # import multiprocessing as mp
@@ -22,9 +23,13 @@ ITERATIVE_MASK = 1
 SRC_THRES = 10
 
 DEBUG_PLOTS_1 = False
-DEBUG_PLOTS_2 = True
+DEBUG_PLOTS_2 = False
 DEBUG_PLOTS_3 = False
-DEBUG_PLOTS_4 = True
+DEBUG_PLOTS_4 = False
+DEBUG_PLOTS_5 = False; DP5COUNT = 0
+DEBUG_PLOTS_6 = False
+
+SAVE_FITS = True
 
 # not using this as scipy fftconvolve is fast enough
 # MP_PROCESSES = 4 
@@ -62,7 +67,10 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                          stack_all_z_at_once=False,
                          write_simmaps=False,
                          force_fwhm=None,
-                         randomize=False):
+                         randomize=False,
+                         mask_leak=True,
+                         random_map_subset=1,
+                         jackknife=False):
         '''
         perform_simstack takes the following steps:
         0. Get catalog and drop nans
@@ -73,6 +81,7 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
         :param add_foreground: (bool) add additional foreground layer.
         :param crop_circles: (bool) exclude masked areas.
         :params stack_all_z_at_once: (bool) choose between stacking in redshift slices or all at once.
+        :param mask_leak: (bool) add a layer for leakage flux from bright sources under catalog mask.
         '''
         if 'stack_all_z_at_once' not in self.config_dict['general']['binning']:
             self.config_dict['general']['binning']['stack_all_z_at_once'] = stack_all_z_at_once
@@ -82,10 +91,19 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
             self.config_dict['general']['binning']['add_foreground'] = add_foreground
         if 'write_simmaps' not in self.config_dict['general']['error_estimator']:
             self.config_dict['general']['error_estimator']['write_simmaps'] = write_simmaps
+        if 'mask_leak' not in self.config_dict['general']['error_estimator']:
+            self.config_dict['general']['binning']['mask_leak'] = mask_leak
+        if 'random_map_subset' not in self.config_dict['general']['error_estimator']:
+            self.config_dict['general']['error_estimator']['random_map_subset'] = random_map_subset
+        if 'jackknife' not in self.config_dict['general']['error_estimator']:
+            self.config_dict['general']['error_estimator']['jackknife'] = jackknife
         stack_all_z_at_once = self.config_dict['general']['binning']['stack_all_z_at_once']
         crop_circles = self.config_dict['general']['binning']['crop_circles']
         add_foreground = self.config_dict['general']['binning']['add_foreground']
         write_simmaps = self.config_dict['general']['error_estimator']['write_simmaps']
+        mask_leak = self.config_dict['general']['binning']['mask_leak']
+        random_map_subset = self.config_dict['general']['error_estimator']['random_map_subset']
+        jackknife = self.config_dict['general']['error_estimator']['jackknife']
 
         # Get catalog.  Clean NaNs
         catalog = self.catalog_dict['tables']['split_table'].dropna()
@@ -119,7 +137,7 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
             redshifts = catalog.pop("redshift")
             for i in np.unique(redshifts):
                 catalog_in = catalog[redshifts == i]
-                distance_label = "_".join(["redshift", str(bins[int(i)]), str(bins[int(i) + 1])]).replace('.', 'p')
+                distance_label = "_".join(["redshift", str(bins[int(i)]), str(bins[int(i) + 1])]).replace('.', 'p').replace('-', 'm')
                 distance_labels.append(distance_label)
                 if bootstrap:
                     labels = self.split_bootstrap_labels(self.catalog_dict['tables']['parameter_labels'][int(i*nlayers):int((i+1)*nlayers)])
@@ -127,10 +145,13 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                     labels = self.catalog_dict['tables']['parameter_labels'][int(i*nlayers):int((i+1)*nlayers)]
                 if add_foreground:
                     labels.append("ones_foreground")
+                if mask_leak:
+                    labels.append("mask_leak")
                 cov_ss_out = self.stack_in_wavelengths(catalog_in, labels=labels, distance_interval=distance_label,
                                                        crop_circles=crop_circles, add_foreground=add_foreground,
                                                        bootstrap=bootstrap, force_fwhm=force_fwhm, randomize=randomize,
-                                                       write_fits_layers=write_simmaps)
+                                                       write_fits_layers=write_simmaps, mask_leak=mask_leak, 
+                                                       random_map_subset=random_map_subset, jackknife=jackknife)
                 for wv in cov_ss_out:
                     if wv not in self.results_dict['band_results_dict']:
                         self.results_dict['band_results_dict'][wv] = {}
@@ -145,13 +166,16 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                     labels = self.split_bootstrap_labels(self.catalog_dict['tables']['parameter_labels'])
                 else:
                     labels.extend(self.catalog_dict['tables']['parameter_labels'][int(i*nlayers):int((i+1)*nlayers)])
-                distance_labels.append("_".join(["redshift", str(bins[int(i)]), str(bins[int(i) + 1])]).replace('.', 'p'))
+                distance_labels.append("_".join(["redshift", str(bins[int(i)]), str(bins[int(i) + 1])]).replace('.', 'p').replace('-', 'm'))
             if add_foreground:
                 labels.append("ones_foreground")
+            if mask_leak:
+                labels.append("mask_leak")
             cov_ss_out = self.stack_in_wavelengths(catalog, labels=labels, distance_interval='all_redshifts',
                                                    crop_circles=crop_circles, add_foreground=add_foreground,
                                                    bootstrap=bootstrap, force_fwhm=force_fwhm, randomize=randomize,
-                                                   write_fits_layers=write_simmaps)
+                                                   write_fits_layers=write_simmaps, mask_leak=mask_leak, 
+                                                   random_map_subset=random_map_subset, jackknife=jackknife)
 
             for wv in cov_ss_out:
                 if wv not in self.results_dict['band_results_dict']:
@@ -161,7 +185,7 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
         self.config_dict['catalog']['distance_labels'] = distance_labels
         self.stack_successful = True
 
-    def build_cube(self,
+    def build_cube(self, wv,
                    map_dict,
                    catalog,
                    labels=None,
@@ -170,7 +194,10 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                    bootstrap=False,
                    force_fwhm=None,
                    randomize=False,
-                   write_fits_layers=False):
+                   write_fits_layers=False,
+                   mask_leak=True, 
+                   random_map_subset=1,
+                   jackknife=False):
         ''' Construct layer cube containing smoothed 2D arrays with positions defined by binning algorithm.
         Optionally, foreground layer can be added; positions can be randomized for null testing; layers can be
         smoothed to forced fwhm.
@@ -183,6 +210,7 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
         :param force_fwhm: Float target fwhm to smooth degrade maps to.
         :param randomize: If True randomize source positions.
         :param write_fits_layers: If True write layers to .fits.
+        :param mask_leak: If True adds a layer for leakage flux from bright sources under catalog mask.
         :return: Dictionary containing 'cube' and 'labels'
         '''
 
@@ -194,6 +222,9 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
         pix = map_dict['pixel_size']
         hd = map_dict['header']
         fwhm = map_dict['fwhm']
+        print("fwhm = ", fwhm)
+        print("pix = ", pix)
+        print("fwhm / pix = ", fwhm / pix)
         wmap = WCS(hd)
 
         # Extract RA and DEC from catalog
@@ -207,16 +238,16 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
         label_dict = self.config_dict['parameter_names']
         ds = [len(label_dict[k]) for k in label_dict]
 
-        if (len(labels) - add_foreground) == np.prod(ds[1:]):
+        if (len(labels) - add_foreground - mask_leak) == np.prod(ds[1:]):
             nlists = ds[1:]
             llists = np.prod(nlists)
-        elif (len(labels) - add_foreground)/2 == np.prod(ds[1:]):
+        elif (len(labels) - add_foreground - mask_leak)/2 == np.prod(ds[1:]):
             nlists = ds[1:]
             llists = 2 * np.prod(nlists)
-        elif (len(labels) - add_foreground)/2 == np.prod(ds):
+        elif (len(labels) - add_foreground - mask_leak)/2 == np.prod(ds):
             nlists = ds
             llists = 2 * np.prod(nlists)
-        elif (len(labels) - add_foreground) == np.prod(ds):
+        elif (len(labels) - add_foreground - mask_leak) == np.prod(ds):
             nlists = ds
             llists = np.prod(nlists)
             #pdb.set_trace()
@@ -521,7 +552,8 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
         if "write_simmaps" in self.config_dict["general"]["error_estimator"]:
             if self.config_dict["general"]["error_estimator"]["write_simmaps"] == 1:
                 map_dict["convolved_layer_cube"] = np.zeros(np.shape(layers))
-
+        
+        
         if crop_circles:
             radius = 1.1
             flattened_pixmap = np.sum(layers, axis=0)
@@ -529,13 +561,78 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
             ind_fit = np.where(total_circles_mask >= 1)
         else:
             ind_fit = np.where(0 * np.sum(layers, axis=0) == 0)
+        
+        if jackknife:
+            # from matplotlib import pyplot as plt
+            # mask = np.zeros(np.shape(layers[0]))
+            # mask[ind_fit] = 1
+            # plt.imshow(mask)
+            # plt.show()
+            
+            # choose one quadrant of the map
+            nx, ny = np.shape(layers[0])
+            xmid, ymid = int(nx / 2), int(ny / 2)
+            
+            # keep one quadrant of the map
+            # ind_fit_keep = np.where((ind_fit[0] < xmid) & (ind_fit[1] < ymid))
+            # ind_fit_keep = np.where((ind_fit[0] < xmid) & (ind_fit[1] >= ymid))
+            # ind_fit_keep = np.where((ind_fit[0] >= xmid) & (ind_fit[1] < ymid))
+            # ind_fit_keep = np.where((ind_fit[0] >= xmid) & (ind_fit[1] >= ymid))
+            
+            # remove one quadrant of the map
+            # ind_fit_keep = np.where((ind_fit[0] < xmid) | (ind_fit[1] < ymid))
+            # ind_fit_keep = np.where((ind_fit[0] < xmid) | (ind_fit[1] >= ymid))
+            # ind_fit_keep = np.where((ind_fit[0] >= xmid) | (ind_fit[1] < ymid))
+            ind_fit_keep = np.where((ind_fit[0] >= xmid) | (ind_fit[1] >= ymid))
+            
+            
+            ind_fit = (ind_fit[0][ind_fit_keep], ind_fit[1][ind_fit_keep])
+            
+            
+            # mask = np.zeros(np.shape(layers[0]))
+            # mask[ind_fit] = 1
+            # plt.imshow(mask)
+            # plt.show()
+        
+        # choose a random subset if needed
+        if random_map_subset < 1:
+            
+            # from matplotlib import pyplot as plt
+            # mask = np.zeros(np.shape(layers[0]))
+            # mask[ind_fit] = 1
+            # plt.imshow(mask)
+            # plt.show()
+            
+            assert random_map_subset > 0, "random_map_subset must be between 0 and 1"
+            print("random_map_subset = ", random_map_subset)
+            # choose randomly
+            random_indices = np.random.choice(np.shape(ind_fit)[1], 
+                    int(random_map_subset * np.shape(ind_fit)[1]), replace=False)
+            ind_fit = (ind_fit[0][random_indices], ind_fit[1][random_indices])
+            # print(random_indices, ind_fit)
+            
+            # mask = np.zeros(np.shape(layers[0]))
+            # mask[ind_fit] = 1
+            # plt.imshow(mask)
+            # plt.show()
+        
+        if mask_leak:
+            radius = 0.5
+            flattened_pixmap = np.sum(layers, axis=0)
+            mask_leak_hitmaps = 1 - self.circle_mask(flattened_pixmap, radius * fwhm, pix)
+        if DEBUG_PLOTS_6:
+            from matplotlib import pyplot as plt
+            plt.figure()
+            plt.imshow(mask_leak_hitmaps)
+            plt.show()
+            plt.close()
 
         nhits = np.shape(ind_fit)[1]
+        cfits_maps = np.zeros([nlayers + 2 + mask_leak + add_foreground, nhits])  # +2 to append cmap and cnoise
         if add_foreground:
-            cfits_maps = np.zeros([nlayers + 3, nhits])  # +3 to append foreground, cmap and cnoise
-            trimmed_labels.append('foreground_layer')
-        else:
-            cfits_maps = np.zeros([nlayers + 2, nhits])  # +2 to append cmap and cnoise
+            trimmed_labels.append('foreground_layer') # layer -(3+mask_leak)
+        if mask_leak:
+            trimmed_labels.append('mask_leak') # layer -3
 
         # If smoothing maps to all have same FWHM
         if force_fwhm:
@@ -557,10 +654,12 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
         path_layer = r'./temp/layers/'
         for umap, layer in enumerate(layers):
             tmap = fftconvolve(layer, kern, mode='same')
-            mean_tmap = np.mean(tmap[ind_fit])
-            cfits_maps[umap, :] = tmap[ind_fit] - mean_tmap # TODO(shubh): what does this mean subtraction do?
+            # mean_tmap = np.mean(tmap[ind_fit])
+            cfits_maps[umap, :] = tmap[ind_fit] #- mean_tmap 
+            # TODO(shubh): what does this mean subtraction do? April 4 2025: removed per Shubh+James no mean subtraction!!!
+            # changes covariance unless you use bootstrapping
             if "convolved_layer_cube" in map_dict:
-                map_dict["convolved_layer_cube"][umap, :, :] = tmap - mean_tmap
+                map_dict["convolved_layer_cube"][umap, :, :] = tmap #- mean_tmap
             if write_fits_layers and 'foreground_layer' not in trimmed_labels[umap]:
                 name_layer = '{0}__fwhm_{1:0.1f}'.format(trimmed_labels[umap], fwhm).replace('.','p')+'.fits'
                 layer = layers[umap, :, :]
@@ -575,9 +674,23 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                     plt.savefig(os.path.join(path_layer, name_layer.replace('.fits', '.png')))
                     plt.close()
         if add_foreground:
-            cfits_maps[-3, :] = np.ones(np.shape(cmap[ind_fit]))
+            cfits_maps[-(3+mask_leak), :] = np.ones(np.shape(cmap[ind_fit]))
+        if mask_leak:
+            tmap = fftconvolve(mask_leak_hitmaps, kern, mode='same')
+            cfits_maps[-3, :] = tmap[ind_fit]
 
         # put map and noisemap in last two layers
+        
+        if SAVE_FITS:
+            # save the map and noise as a fits file
+            mask = np.zeros(np.shape(layers[0]))
+            mask[ind_fit] = 1
+            prefix = f"./fits/{wv}"
+            hdulist = [fits.PrimaryHDU(header=hd)]
+            hdulist += [fits.ImageHDU(arr) for arr in [cmap, cnoise, mask]]
+            hdulist = fits.HDUList(hdulist)
+            hdulist.writeto(f"{prefix}_map_noise_mask.fits", overwrite=True)
+        
         cfits_maps[-2, :] = cmap[ind_fit]
         cfits_maps[-1, :] = cnoise[ind_fit]
 
@@ -592,7 +705,10 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                              add_foreground=False,
                              bootstrap=False,
                              randomize=False,
-                             write_fits_layers=False):
+                             write_fits_layers=False,
+                             mask_leak=True,
+                             random_map_subset=1,
+                             jackknife=False):
         ''' Loop through wavelengths and perform simstack.
 
         :param catalog: Table containing ra, dec, and columns defining bins.
@@ -604,6 +720,7 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
         :param bootstrap: Integer seed for random number generator.
         :param randomize: If True shuffles ra/dec positions.
         :param write_fits_layers: If True writes layers into .fits.
+        :param mask_leak: If True adds a layer for leakage flux from bright sources under catalog mask.
         :return cov_ss_dict: Dict containing stacked fluxes per wavelengths.
         '''
 
@@ -618,14 +735,16 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
             map_dict = self.maps_dict[wv].copy()
 
             # Construct cube and labels for regression via lmfit.
-            cube_dict = self.build_cube(map_dict, catalog.copy(), labels=labels, crop_circles=crop_circles,
+            cube_dict = self.build_cube(wv, map_dict, catalog.copy(), labels=labels, crop_circles=crop_circles,
                                         add_foreground=add_foreground, bootstrap=bootstrap, randomize=randomize,
-                                        force_fwhm=force_fwhm, write_fits_layers=write_fits_layers)
+                                        force_fwhm=force_fwhm, write_fits_layers=write_fits_layers, mask_leak=mask_leak, 
+                                        random_map_subset=random_map_subset, jackknife=jackknife)
             cube_labels = cube_dict['labels']
             print("Simultaneously Stacking {} Layers in {}".format(len(cube_labels), wv))
 
             # Regress cube (i.e., this is simstack!)
-            cov_ss_1d = self.regress_cube_layers(cube_dict['cube'], labels=cube_dict['labels'])
+            cov_ss_1d = self.regress_cube_layers(cube_dict['cube'], labels=cube_dict['labels'], 
+                                                add_foreground=add_foreground, mask_leak=mask_leak)
 
             # Store in redshift slices.
             if 'stacked_flux_densities' not in map_dict:
@@ -645,7 +764,7 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                 map2d[ind_fit] = cube[-2, :]
                 fit2d = np.zeros(cms)
                 for i, iparam_label in enumerate(cube_dict['labels']):
-                    param_label = iparam_label.replace('.', 'p')
+                    param_label = iparam_label.replace('.', 'p').replace('-', 'm')
                     if 'foreground' not in iparam_label:
                         layer = np.zeros(cms)
                         layer[ind_fit] = cube[i, :]
@@ -653,7 +772,8 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                     else:
                         fit2d += cov_ss_1d.params[param_label].value
                 mask = np.zeros(np.shape(layer)) * np.nan
-                mask[ind_fit] = 1
+                mask2 = cov_ss_1d.mask
+                mask[ind_fit] = mask2
                 fit2d = fit2d * mask
                 
                 res2d = map2d - fit2d
@@ -688,15 +808,47 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                 plt.savefig(os.path.join('./temp/', f'fit_map_resid_{wv}.png'))
                 plt.close()
                 
-                hdulist = [fits.PrimaryHDU()]
+                hdulist = [fits.PrimaryHDU(header=map_dict['header'])]
                 hdulist += [fits.ImageHDU(arr) for arr in [map2d, fit2d, res2d, res2d_err, mask]]
                 hdulist = fits.HDUList(hdulist)
                 hdulist.writeto(os.path.join('./temp/', f'fit_map_resid_{wv}.fits'), overwrite=True)
 
+            if SAVE_FITS:
+                cms = cube_dict['cms']
+                cube = cube_dict['cube']
+                ind_fit = cube_dict['ind_fit']
+                map2d = np.zeros(cms) * np.nan
+                err2d = np.zeros(cms) * np.nan
+                map2d[ind_fit] = cube[-2, :]
+                err2d[ind_fit] = cube[-1, :]
+                
+                fit2d = np.zeros(cms)
+                for i, iparam_label in enumerate(cube_dict['labels']):
+                    param_label = iparam_label.replace('.', 'p').replace('-', 'm')
+                    layer = np.zeros(cms)
+                    layer[ind_fit] = cube[i, :]
+                    fit2d += cov_ss_1d.params[param_label].value * layer
+                
+                mask = np.zeros(np.shape(layer)) * np.nan
+                mask2 = cov_ss_1d.mask
+                mask[ind_fit] = mask2
+                
+                # fit2d = fit2d * mask
+                
+                res2d = map2d - fit2d
+                res2d_err = res2d.copy()
+                res2d_err /= err2d
+                
+                prefix = f"./fits/{wv}"
+                hdulist = [fits.PrimaryHDU(header=map_dict['header'])]
+                hdulist += [fits.ImageHDU(arr) for arr in [map2d, fit2d, res2d, res2d_err, err2d, mask]]
+                hdulist = fits.HDUList(hdulist)
+                hdulist.writeto(f"{prefix}_map_fit_res_reserr_err_mask.fits", overwrite=True)
+            
             # Write simulated maps from best-fits
             if self.config_dict["general"]["error_estimator"]["write_simmaps"]:
                 for i, iparam_label in enumerate(cube_dict['labels']):
-                    param_label = iparam_label.replace('.', 'p')
+                    param_label = iparam_label.replace('.', 'p').replace('-', 'm')
                     if 'foreground' not in iparam_label:
                         map_dict["convolved_layer_cube"][i, :, :] *= cov_ss_1d.params[param_label].value
 
@@ -725,7 +877,9 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
 
     def regress_cube_layers(self,
                             cube,
-                            labels=None):
+                            labels=None,
+                            add_foreground=True,
+                            mask_leak=True):
         ''' Performs simstack algorithm on layers contained in the cube.  The map and noisemap are the last two
         layers in the cube and are extracted before stacking.  LMFIT is used to perform the regresssion.
 
@@ -745,10 +899,10 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
         for iarg in range(len(cube)):
             # Assign Parameter Labels
             if not labels:
-                parameter_label = self.catalog_dict['tables']['parameter_labels'][iarg].replace('.', 'p')
+                parameter_label = self.catalog_dict['tables']['parameter_labels'][iarg].replace('.', 'p').replace('-', 'm')
             else:
                 try:
-                    parameter_label = labels[iarg].replace('.', 'p')
+                    parameter_label = labels[iarg].replace('.', 'p').replace('-', 'm')
                 except:
                     pdb.set_trace()
             # Add parameter
@@ -759,11 +913,11 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
         #                      args=(np.ndarray.flatten(cube),),
         #                      kws={'data1d': np.ndarray.flatten(imap), 'err1d': np.ndarray.flatten(ierr)},
         #                      nan_policy='propagate')
-        cov_ss_1d = self.linear_minimize(fit_params, cube, imap, ierr)
+        cov_ss_1d = self.linear_minimize(fit_params, cube, imap, ierr, add_foreground=add_foreground, mask_leak=mask_leak)
         return cov_ss_1d
 
 
-    def linear_minimize(self, p, layers, data, err=None, arg_order=None):
+    def linear_minimize(self, p, layers, data, err=None, arg_order=None, add_foreground=True, mask_leak=True):
         ''' 
         Function that minimizes the difference between the data and the model, 
         using analytical marginalization of the linear model parameters.
@@ -780,47 +934,56 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
         data = np.array(data)
         err = np.array(err)
         
+        bounds = ([0.0] * (len(p)-add_foreground-mask_leak) + [-np.inf] * (add_foreground+mask_leak), 
+                  [np.inf] * len(p))
+        # bounds = (-np.inf, np.inf)
+        
         assert(layers.shape[0] == data.shape[0])
         assert(layers.shape[0] == err.shape[0])
+
+        mask = np.ones_like(data, dtype=bool)
         
-        # remove mean from model layers: in normal simstack this is done *after*
-        # the model has been computed, but here we do it for each component 
-        # before to make the model linear in the parameters
-        layers[:, :-1] -= np.mean(layers[:, :-1], axis=0)
-        data -= np.mean(data) 
-        # TODO: what about the last "foreground" layer?
-        
-        # scale the data and model by the noise to get the correct relative weighting
-        layers /= err[:, np.newaxis]
-        data /= err
-        
-        result = lsq_linear(layers, data, lsq_solver="exact")#, bounds=(0, np.inf))
-        
-        for ind in range(ITERATIVE_MASK):
-            # Agrawal Dec 1 2024: try adding a iterative fitting schema
-            # perform a fit, check residuals, mask large outliers, and then try the fit again
-            sigma_threshold = 5.0
-            model = layers @ result.x
-            residuals = data - model 
-            mask = np.abs(residuals) < (sigma_threshold)
-            # residuals are already scaled by err, should follow standard normal
-            print(np.sum(~mask), len(mask), np.sum(~mask) / len(mask))
+        for _ in range(ITERATIVE_MASK + 1):
+            if _ != 0:
+                # Agrawal Dec 1 2024: try adding a iterative fitting schema
+                # perform a fit, check residuals, mask large outliers, and then try the fit again
+                sigma_threshold = 3.0
+                model = l @ result.x
+                residuals = d - model 
+                mask[mask] *= (np.abs(residuals) < (sigma_threshold))
+                # residuals are already scaled by err, should follow standard normal
+                # print(np.sum(~mask), len(mask), np.sum(~mask) / len(mask))
+            l, d, e = layers[mask], data[mask], err[mask]
+            # remove mean from model layers: in normal simstack this is done *after*
+            # the model has been computed, but here we do it for each component 
+            # before to make the model linear in the parameters
+            # l[:, :-1] -= np.mean(l[:, :-1], axis=0)
+            d -= np.mean(d)
             
-            data = data[mask]
-            layers = layers[mask]
-            result = lsq_linear(layers, data, lsq_solver="exact")
-        
+            # scale the data and model by the noise to get the correct relative weighting
+            l /= e[:, np.newaxis]
+            d /= e
+            
+            result = lsq_linear(l, d, lsq_solver="exact", bounds=bounds)
+            
         # calculate chi^2
-        model = layers @ result.x
-        chi2 = np.sum((data - model) ** 2) # already scaled by err
-        ndf = len(data) - len(result.x)
+        model = l @ result.x
+        chi2 = np.sum((d - model) ** 2) # already scaled by err
+        ndf = len(d) - len(result.x)
         rchi2 = chi2 / ndf
         
         if DEBUG_PLOTS_3:
             from matplotlib import pyplot as plt
             plt.figure()
-            plt.plot(data, label='data')
-            plt.plot(model, label='model')
+            plt.plot(model, label='model', alpha=0.5)
+            plt.plot(d, label='data', alpha=0.5)
+            plt.title(rchi2)
+            plt.legend()
+            plt.show()
+            plt.close()
+            
+            plt.figure()
+            plt.plot(mask, label='mask', alpha=0.5)
             plt.title(rchi2)
             plt.legend()
             plt.show()
@@ -828,16 +991,33 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
             
             plt.figure()
             plt.title(f"ndf {ndf}, rchi2: {rchi2}, chi2: {chi2},")
-            plt.hist(data-model, bins=50, range=(-5, 5))
+            plt.hist(d-model, bins=50, range=(-5, 5))
+            plt.hist(d, bins=50, range=(-5, 5), alpha=0.5)
+            plt.hist(model, bins=50, range=(-5, 5), alpha=0.5)
             plt.show()
             plt.close()
             
             plt.figure()
             plt.title(f"ndf {ndf}, rchi2: {rchi2}, chi2: {chi2},")
-            plt.hist(data-model, bins=50)
+            plt.hist(d-model, bins=50)
+            plt.hist(d, bins=50, alpha=0.5)
+            plt.hist(model, bins=50, alpha=0.5)
             plt.show()
             plt.close()
             
+            plt.figure()
+            plt.title(f"ndf {ndf}, rchi2: {rchi2}, chi2: {chi2},")
+            plt.hist(data-(layers @ result.x), bins=50)
+            plt.show()
+            plt.close()
+            
+        if DEBUG_PLOTS_5:
+            import pickle, os
+            global DP5COUNT
+            with open(os.path.join('./temp/', f'debug{DP5COUNT}.pkl'), 'wb') as f:
+                pickle.dump((result, layers, data, err, mask, rchi2, ndf, p), f)
+            DP5COUNT += 1
+
         # now, in order to make life easier, we want to make the structure of
         # this object similar to the lmfit result object
                 
@@ -848,7 +1028,7 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
         else:
             for i, key in enumerate(p.keys()):
                 result_params.add(key, value=result.x[i])
-        
+                        
         # "copying" a OptimizeResult from scipy.optimize to a lmfit MinimizerResult
         return_obj = type('linear_min_result', (object,), 
                         {"params": result_params,
@@ -859,6 +1039,7 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                         "status": result.status,
                         "rchi2": rchi2,
                         "ndf": ndf,
+                        "mask": mask,
                         })
         return return_obj
 

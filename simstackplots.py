@@ -391,7 +391,7 @@ class SimstackPlots(SimstackToolbox):
                 for ip, plab in enumerate(self.config_dict['parameter_names'][bin_keys[2]]):
                     if ip or show_qt:
                         id_label = "__".join([zlab, mlab, plab])
-                        label = "__".join([zlab, mlab, plab]).replace('.', 'p')
+                        label = "__".join([zlab, mlab, plab]).replace('.', 'p').replace('-', 'm')
 
                         if ip:
                             ix = im
@@ -557,7 +557,7 @@ class SimstackPlots(SimstackToolbox):
             for im, mlab in enumerate(self.config_dict['parameter_names'][bin_keys[1]]):
                 for ip, plab in enumerate(self.config_dict['parameter_names'][bin_keys[2]]):
                     id_label = "__".join([zlab, mlab, plab])
-                    label = "__".join([zlab, mlab, plab]).replace('.', 'p')
+                    label = "__".join([zlab, mlab, plab]).replace('.', 'p').replace('-', 'm')
 
                     if ip:
                         ix = im
@@ -747,8 +747,8 @@ class SimstackPlots(SimstackToolbox):
                 color = 'y'
 
             if bootstrap_dict is not None:
-                for iboot in range(len(bootstrap_dict['sed_bootstrap_fluxes_dict'][id_label.replace('.', 'p')])):
-                    yplot_boot = bootstrap_dict['sed_bootstrap_fluxes_dict'][id_label.replace('.', 'p')][iboot] * 1e3
+                for iboot in range(len(bootstrap_dict['sed_bootstrap_fluxes_dict'][id_label.replace('.', 'p').replace('-', 'm')])):
+                    yplot_boot = bootstrap_dict['sed_bootstrap_fluxes_dict'][id_label.replace('.', 'p').replace('-', 'm')][iboot] * 1e3
                     axs.scatter(wvs, yplot_boot, color=color, alpha=0.1)
 
             yerr_diag = np.sqrt(np.diag(yerr)[iwv])

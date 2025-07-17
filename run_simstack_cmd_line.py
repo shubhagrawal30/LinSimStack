@@ -94,6 +94,7 @@ def main():
             simstack_object.perform_simstack(bootstrap=boot_in, randomize=randomize, force_fwhm=force_fwhm)
         else:
             simstack_object.perform_simstack(bootstrap=boot, randomize=randomize, force_fwhm=force_fwhm)
+        break
 
     # Save Results
     saved_pickle_path = simstack_object.save_stacked_fluxes(param_file_path)
