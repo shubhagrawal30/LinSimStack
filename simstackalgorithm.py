@@ -26,7 +26,7 @@ DEBUG_PLOTS_1 = False
 DEBUG_PLOTS_2 = False
 DEBUG_PLOTS_3 = False
 DEBUG_PLOTS_4 = False
-DEBUG_PLOTS_5 = False; DP5COUNT = 0
+DEBUG_PLOTS_5 = True; DP5COUNT = 0
 DEBUG_PLOTS_6 = False
 
 SAVE_FITS = True
@@ -58,7 +58,8 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
         # Store redshifts and lookback times.
         zbins = json.loads(self.config_dict['catalog']['classification']['redshift']['bins'])
         self.config_dict['distance_bins'] = {'redshift': zbins,
-                                             'lookback_time': self.config_dict['cosmology_dict']['cosmology'].lookback_time(zbins)}
+                                            #  'lookback_time': self.config_dict['cosmology_dict']['cosmology'].lookback_time(zbins)
+                                            }
 
     def perform_simstack(self,
                          bootstrap=0,
@@ -161,7 +162,9 @@ class SimstackAlgorithm(SimstackToolbox, Skymaps, Skycatalogs):
                         self.results_dict['band_results_dict'][wv][flux_density_key].update(cov_ss_out[wv].params)
         else:
             labels = []
-            for i in np.unique(catalog['redshift']):
+            binidxs = np.unique(catalog['redshift'])
+            binidxs = np.arange(binidxs.min(), binidxs.max()+1, 1)
+            for i in binidxs:
                 if bootstrap:
                     labels = self.split_bootstrap_labels(self.catalog_dict['tables']['parameter_labels'])
                 else:
